@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- A toolbar button opens two switches: **On everywhere** and **On for** the current site. The badge shows only when both are on. Each choice is remembered, and open tabs follow it straight away. The button shows OFF on tabs where KookTube is off.
+- While it is off, KookTube does not connect to the player. If it was already connected, transpose returns to 0 and listening stops. Refresh the tab to disconnect fully.
+- This needs the `storage` permission, and the browser shows no warning for it.
+- `node test/toggle.js` tests the switches, the popup, and the toolbar label.
+
 ## 1.2.1
 
 - The same badge also runs on Suno, Udio, Radio Javan, Bandcamp, Instagram, TikTok, Facebook, Vimeo, Mixcloud, Audiomack, Twitch, Aparat, and the Internet Archive. Encrypted players are still left untouched.

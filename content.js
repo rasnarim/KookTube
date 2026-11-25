@@ -792,6 +792,21 @@
     }
   }
 
+  /*
+   * On/off settings in storage.local. `globalOff` hides KookTube everywhere;
+   * `off:<hostname>` hides it on one site. popup.js writes the same keys.
+   */
+  const GLOBAL_OFF_KEY = 'globalOff';
+
+  function siteOffKey(hostname) {
+    return 'off:' + hostname;
+  }
+
+  function siteEnabled(items, hostname) {
+    if (!items) return true;
+    return !items[GLOBAL_OFF_KEY] && !items[siteOffKey(hostname)];
+  }
+
   function boot() {
     if (globalThis.__kooktubeKeyDetectorLoaded) return;
     globalThis.__kooktubeKeyDetectorLoaded = true;
@@ -826,6 +841,7 @@
       pitchParam: null,
       pitchFailed: false,
       drmBlocked: false,
+      enabled: null,
     };
 
     const host = document.createElement('div');
@@ -1060,7 +1076,7 @@
 
     function setWatchVisible(onWatch) {
       state.onWatch = onWatch;
-      host.style.setProperty('display', onWatch ? 'block' : 'none', 'important');
+      host.style.setProperty('display', onWatch && state.enabled === true ? 'block' : 'none', 'important');
     }
 
     function gestureOk() {
@@ -1093,6 +1109,7 @@
     }
 
     function onAudioMessage(event) {
+      if (!state.enabled) return;
       try {
         const data = event.data;
         if (!data || !data.db) return;
@@ -1132,7 +1149,7 @@
     }
 
     function armAudio() {
-      if (state.arming || !gestureOk()) return;
+      if (!state.enabled || state.arming || !gestureOk()) return;
       const video = findVideo();
       if (!video) return;
       state.arming = true;
@@ -1163,9 +1180,15 @@
       attachPipeline(video).then(finish, finish);
     }
 
+    function extApi() {
+      if (typeof browser !== 'undefined' && browser.runtime) return browser;
+      if (typeof chrome !== 'undefined' && chrome.runtime) return chrome;
+      return null;
+    }
+
     function extensionURL(file) {
-      const runtime = (typeof browser !== 'undefined' && browser.runtime) ||
-        (typeof chrome !== 'undefined' && chrome.runtime);
+      const ext = extApi();
+      const runtime = ext && ext.runtime;
       try {
         return runtime && runtime.getURL ? runtime.getURL(file) : '';
       } catch (err) {
@@ -1247,7 +1270,7 @@
     }
 
     function attachVideo(video) {
-      if (!video) return;
+      if (!video || !state.enabled) return;
       if (video.__kooktubeGraphFailed) {
         state.captureError = true;
         return;
@@ -1303,6 +1326,7 @@
       state.video = video;
       state.drmBlocked = encryptedMedia(video);
       if (state.drmBlocked) return;
+      if (!state.enabled) return;
       if (gestureOk()) armAudio();
       if (state.audioReady) attachVideo(video);
     }
@@ -1320,6 +1344,7 @@
     }
 
     function fallbackFrame() {
+      if (!state.enabled) return;
       if (state.useWorklet || !state.analyser || !state.freqData) return;
       if (adPlaying()) return;
       const video = state.video;
@@ -1347,7 +1372,7 @@
     }
 
     function render() {
-      if (!state.onWatch) return;
+      if (!state.onWatch || !state.enabled) return;
       tuningEl.textContent = state.analysis.tonalSeconds > 0 ? formatTuning(state.analysis.tuningCents) : '';
       if (state.drmBlocked) {
         labelEl.classList.add('pending');
@@ -1402,6 +1427,71 @@
       syncPage();
       placeHost();
       render();
+      reportEnabled();
+    }
+
+    /*
+     * The toolbar popup turns KookTube off everywhere or for this site. While
+     * off, nothing new is attached. A player that was already attached stays
+     * routed through the audio graph until the tab is refreshed, so transpose
+     * goes back to 0 and analysis stops, which leaves that audio untouched.
+     */
+    const SITE_KEY = siteOffKey(location.hostname);
+    const settings = {};
+
+    function setEnabled(on) {
+      if (state.enabled === on) return;
+      state.enabled = on;
+      if (!on) {
+        setSemitones(0);
+        state.held = null;
+      }
+      onNavigate();
+    }
+
+    function reportEnabled() {
+      if (state.enabled === null) return;
+      const ext = extApi();
+      if (!ext || !ext.runtime.sendMessage) return;
+      try {
+        const sent = ext.runtime.sendMessage({ type: 'kooktube-state', enabled: state.enabled });
+        if (sent && sent.catch) sent.catch(function () { /* background is not listening */ });
+      } catch (err) {
+        /* The extension was reloaded and this tab has not been refreshed. */
+      }
+    }
+
+    function loadEnabled() {
+      const ext = extApi();
+      const area = ext && ext.storage && ext.storage.local;
+      if (!area) {
+        setEnabled(true);
+        return;
+      }
+      try {
+        Promise.resolve(area.get([GLOBAL_OFF_KEY, SITE_KEY])).then(function (items) {
+          if (items) {
+            settings[GLOBAL_OFF_KEY] = items[GLOBAL_OFF_KEY];
+            settings[SITE_KEY] = items[SITE_KEY];
+          }
+          setEnabled(siteEnabled(settings, location.hostname));
+        }, function () {
+          setEnabled(true);
+        });
+      } catch (err) {
+        setEnabled(true);
+      }
+      ext.storage.onChanged.addListener(function (changes, areaName) {
+        if (areaName !== 'local') return;
+        if (!changes[GLOBAL_OFF_KEY] && !changes[SITE_KEY]) return;
+        if (changes[GLOBAL_OFF_KEY]) settings[GLOBAL_OFF_KEY] = changes[GLOBAL_OFF_KEY].newValue;
+        if (changes[SITE_KEY]) settings[SITE_KEY] = changes[SITE_KEY].newValue;
+        setEnabled(siteEnabled(settings, location.hostname));
+      });
+      ext.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+        if (!message || message.type !== 'kooktube-host') return;
+        sendResponse({ host: location.hostname });
+      });
     }
 
     window.addEventListener('yt-navigate-finish', onNavigate, true);
@@ -1423,10 +1513,14 @@
     }, HOP_SEC * 1000);
 
     onNavigate();
+    loadEnabled();
   }
 
   return {
     boot: boot,
+    GLOBAL_OFF_KEY: GLOBAL_OFF_KEY,
+    siteOffKey: siteOffKey,
+    siteEnabled: siteEnabled,
     detectChroma: detectChroma,
     hasSignificantQuarterTones: hasSignificantQuarterTones,
     quarterToneEnergy: quarterToneEnergy,

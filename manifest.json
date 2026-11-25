@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KookTube Key Detector",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "On-device key detection for YouTube, Spotify, and SoundCloud. Western keys and Persian dastgah.",
   "browser_specific_settings": {
     "gecko": {
@@ -15,6 +15,19 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "KookTube",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {

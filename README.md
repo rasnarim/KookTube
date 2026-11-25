@@ -58,4 +58,10 @@ A copy that stays installed after Firefox quits has to be signed through [addons
 
 The extensions page should list **KookTube Key Detector**. Open a player page and refresh that tab. Click the page once. The badge starts in **Western**. Use **−** and **+** to transpose what you hear. Playback speed does not change.
 
+Click the KookTube button in the browser toolbar to turn it off everywhere or only on the current site. In Chrome, pin the button from the puzzle-piece menu first. The button shows **OFF** on tabs where KookTube is off.
+
 Spotify plays most full tracks through an encrypted player. The badge stays visible there and leaves that audio alone, because reading it is not possible without silencing the song. SoundCloud and YouTube use a normal media element, so detection and transpose both run.
+
+## Tests
+
+Run `node test/run.js` for the detection maths and `node test/toggle.js` for the on/off switches.
